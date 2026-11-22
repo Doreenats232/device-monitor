@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { deviceMetrics, devices } from "@/db/schema";
+import { detectAlerts } from "@/lib/alerts";
 import { HEARTBEAT_INTERVAL_SECONDS, hashToken, normalizeMetrics } from "@/lib/monitor";
 import { and, eq, lt, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -14,7 +15,14 @@ export async function POST(request: Request) {
   }
 
   const [device] = await db
-    .select({ id: devices.id })
+    .select({
+      id: devices.id,
+      name: devices.name,
+      lastSeenAt: devices.lastSeenAt,
+      batteryLevel: devices.batteryLevel,
+      charging: devices.charging,
+      cpuPercent: devices.cpuPercent,
+    })
     .from(devices)
     .where(eq(devices.tokenHash, hashToken(token)))
     .limit(1);
@@ -36,6 +44,9 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
+
+  // Alerts must never break a heartbeat.
+  await detectAlerts(device.id, device, { battery: metrics.battery, cpuPercent: metrics.system.cpuPercent ?? null }).catch(() => {});
 
   await db
     .update(devices)

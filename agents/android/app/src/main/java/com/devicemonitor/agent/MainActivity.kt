@@ -64,6 +64,45 @@ class MainActivity : Activity() {
         header()
         val pairing = PairingStore.load(this)
         if (pairing == null) renderPairForm() else renderPaired(pairing)
+        renderAlerts(pairing?.server)
+        if (AlertPrefs.enabled(this)) AlertService.start(this)
+    }
+
+    private fun renderAlerts(pairedServer: String?) {
+        val c = card()
+        title(c, "Phone alerts")
+        if (AlertPrefs.enabled(this)) {
+            label("Alerts are ON. You get a notification when a device goes offline, battery is low, or CPU spikes.", 13f, color = muted, parent = c)
+            button(c, "Turn off alerts", danger = true) { AlertService.stop(this); render() }
+            return
+        }
+        label("Get notified here when any of your devices has a problem. Uses your dashboard password once; the phone then keeps a read-only alerts key.", 13f, color = muted, parent = c)
+        val serverField = input(c, "Dashboard URL", InputType.TYPE_TEXT_VARIATION_URI)
+        serverField.setText(pairedServer ?: AlertPrefs.server(this))
+        val pw = input(c, "Dashboard password (leave empty if none)", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        val status = label("", 13f, color = Color.parseColor("#FCA5A5"), parent = c)
+        button(c, "Turn on alerts", primary = true) {
+            val server = serverField.text.toString().trim().trimEnd('/')
+            if (!server.startsWith("http://") && !server.startsWith("https://")) {
+                status.text = "URL must start with http:// or https://"; return@button
+            }
+            status.setTextColor(muted); status.text = "Signing in…"
+            val password = pw.text.toString()
+            io.execute {
+                try {
+                    val res = Api.login(server, password)
+                    if (res.status in 200..299) {
+                        AlertPrefs.save(this, server, res.body.optString("viewerToken", ""))
+                        ui.post { AlertService.start(this); render() }
+                    } else {
+                        val msg = res.body.optString("error", "Sign-in failed (HTTP ${res.status})")
+                        ui.post { status.setTextColor(Color.parseColor("#FCA5A5")); status.text = msg }
+                    }
+                } catch (e: Exception) {
+                    ui.post { status.setTextColor(Color.parseColor("#FCA5A5")); status.text = "Could not reach the dashboard: ${e.message}" }
+                }
+            }
+        }
     }
 
     private fun header() {

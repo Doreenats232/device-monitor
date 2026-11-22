@@ -181,14 +181,54 @@ async function readCpuPercent() {
   return total > 0 ? round1((1 - idle / total) * 100) : null;
 }
 
+// ---------- Top apps (by memory, with CPU%) ----------
+
+let procCache = { at: 0, value: null };
+async function readTopProcesses() {
+  if (Date.now() - procCache.at < 60000) return procCache.value;
+  let list = null;
+  try {
+    if (IS_WIN) {
+      const out = await powershell(
+        "$a=@{};Get-Process|%{$a[$_.Id]=$_.CPU};Start-Sleep -Milliseconds 1000;$n=[Environment]::ProcessorCount;" +
+          "Get-Process|%{$c=0;if($a.ContainsKey($_.Id) -and $_.CPU -ne $null -and $a[$_.Id] -ne $null){$c=($_.CPU-$a[$_.Id])/$n*100};" +
+          "[pscustomobject]@{n=$_.Name;m=$_.WorkingSet64;c=$c}}|Group-Object n|%{[pscustomobject]@{name=$_.Name;" +
+          "memoryMb=[math]::Round(($_.Group|Measure-Object m -Sum).Sum/1MB);cpu=[math]::Round(($_.Group|Measure-Object c -Sum).Sum,1)}}|" +
+          "Sort-Object memoryMb -Descending|Select-Object -First 6|ConvertTo-Json -Compress",
+      );
+      if (out) {
+        const parsed = JSON.parse(out);
+        list = (Array.isArray(parsed) ? parsed : [parsed]).map((p) => ({ name: String(p.name), memoryMb: Number(p.memoryMb) || 0, cpu: Number(p.cpu) || 0 }));
+      }
+    } else {
+      const out = await run("ps", ["-Ao", "rss=,comm="]);
+      if (out) {
+        const byName = new Map();
+        for (const line of out.split("\n")) {
+          const m = line.trim().match(/^(\d+)\s+(.+)$/);
+          if (!m) continue;
+          const name = path.basename(m[2]);
+          byName.set(name, (byName.get(name) || 0) + Number(m[1]) / 1024);
+        }
+        list = [...byName.entries()].map(([name, mb]) => ({ name, memoryMb: Math.round(mb) })).sort((a, b) => b.memoryMb - a.memoryMb).slice(0, 6);
+      }
+    }
+  } catch {
+    list = null;
+  }
+  procCache = { at: Date.now(), value: list };
+  return list;
+}
+
 // ---------- Collect and send ----------
 
 async function collectMetrics() {
-  const [battery, network, disk, cpuPercent] = await Promise.all([
+  const [battery, network, disk, cpuPercent, topProcesses] = await Promise.all([
     readBattery(),
     readNetwork(),
     readDisk(),
     readCpuPercent(),
+    readTopProcesses(),
   ]);
   const totalMb = os.totalmem() / MB;
   const usedMb = totalMb - os.freemem() / MB;
@@ -210,7 +250,8 @@ async function collectMetrics() {
       hostname: os.hostname(),
       cpuModel: cpus[0] ? cpus[0].model : null,
       cores: cpus.length,
-      agent: "pc-1.0",
+      agent: "desktop-1.1",
+      topProcesses,
     },
   };
 }

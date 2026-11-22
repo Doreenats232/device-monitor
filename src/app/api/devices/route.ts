@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { deviceMetrics, devices } from "@/db/schema";
+import { checkOffline } from "@/lib/alerts";
 import { ONLINE_WINDOW_MS } from "@/lib/monitor";
 import { and, desc, gt, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -10,6 +11,7 @@ const HISTORY_POINTS_PER_DEVICE = 60;
 
 // Dashboard data: every paired device with its latest snapshot and recent history.
 export async function GET() {
+  await checkOffline().catch(() => {});
   const rows = await db.select().from(devices).orderBy(devices.createdAt);
   const ids = rows.map((r) => r.id);
 

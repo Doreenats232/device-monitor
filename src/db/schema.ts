@@ -60,3 +60,18 @@ export const devicePairings = pgTable("device_pairings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+// Alerts raised by the server (low battery, offline, ...). Shown on the dashboard and pushed to the phone app.
+export const alerts = pgTable(
+  "alerts",
+  {
+    id: serial("id").primaryKey(),
+    deviceId: integer("device_id"),
+    deviceName: text("device_name").notNull(),
+    kind: text("kind").notNull(), // low_battery | full | offline | online | high_cpu
+    level: text("level").notNull(), // info | warn | crit
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("alerts_created_idx").on(table.createdAt)],
+);

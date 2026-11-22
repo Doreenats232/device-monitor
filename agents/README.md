@@ -84,3 +84,12 @@ Push this project to GitHub and run **Actions → Build APK and EXE**. It produc
 - `DeviceMonitor-desktop-exe` → `DeviceMonitor.exe`, ONE app for PC: choose **Monitor**, **Be monitored**, or **Both** (tray icon, remembers settings)
 
 Deploy the Next.js dashboard publicly (e.g. Render + Postgres, `DATABASE_URL` env var, `npm run build && npm start`) so phones and PCs can reach it.
+
+## Dashboard password
+
+Set `DASHBOARD_PASSWORD` (and optionally `SESSION_SECRET`) on the server to require a login. Without it the dashboard is open.
+Device agents keep working (they use their own device tokens). In the phone app, "Phone alerts" signs in once and keeps a read-only alerts key.
+
+## Downloads
+
+Public page: `/download` on your dashboard, or the repo's **Releases → latest**.

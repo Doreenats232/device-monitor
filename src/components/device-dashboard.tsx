@@ -26,7 +26,7 @@ type DeviceView = {
   history: HistoryPoint[];
 };
 
-type Alert = { id: string; deviceId: number; level: "warn" | "crit" | "info"; text: string; at: number };
+type Alert = { id: number; deviceId: number | null; level: string; text: string; at: string };
 type PairingState = { code: string; expiresAt: string } | null;
 type Filter = "all" | "online" | "offline" | "pc" | "android";
 
@@ -185,6 +185,36 @@ function BluetoothList({ details }: { details: Record<string, unknown> | null })
   );
 }
 
+function TopProcesses({ details }: { details: Record<string, unknown> | null }) {
+  const list = details && Array.isArray(details.topProcesses) ? (details.topProcesses as unknown[]) : [];
+  const items = list
+    .filter((x): x is { name: string; memoryMb: number; cpu?: number } => Boolean(x) && typeof x === "object" && typeof (x as { name?: unknown }).name === "string" && typeof (x as { memoryMb?: unknown }).memoryMb === "number")
+    .slice(0, 6);
+  if (items.length === 0) return null;
+  const max = Math.max(...items.map((i) => i.memoryMb), 1);
+  return (
+    <div className="rounded-2xl bg-white/5 p-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Top apps by memory</p>
+      <ul className="space-y-2">
+        {items.map((p) => (
+          <li key={p.name}>
+            <div className="flex justify-between text-xs text-slate-300">
+              <span className="truncate">{p.name}</span>
+              <span className="ml-2 shrink-0 text-slate-400">
+                {typeof p.cpu === "number" ? `${p.cpu}% CPU · ` : ""}
+                {p.memoryMb >= 1024 ? `${(p.memoryMb / 1024).toFixed(1)} GB` : `${p.memoryMb} MB`}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-violet-400/80" style={{ width: `${(p.memoryMb / max) * 100}%` }} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function DeviceCard({
   device,
   expanded,
@@ -268,6 +298,7 @@ function DeviceCard({
               color="#a78bfa"
             />
           </div>
+          <TopProcesses details={device.details} />
           <BluetoothList details={device.details} />
           <dl className="grid grid-cols-2 gap-2 text-xs text-slate-400">
             <div className="rounded-xl bg-white/5 p-2">
@@ -341,39 +372,30 @@ export default function DeviceDashboard() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [notify, setNotify] = useState(false);
-  const prev = useRef<Map<number, DeviceView>>(new Map());
-  const firstLoad = useRef(true);
+  const lastAlertId = useRef(0);
+  const bootstrapped = useRef(false);
 
-  const pushAlert = useCallback((a: Omit<Alert, "at">) => {
-    setAlerts((list) => (list.some((x) => x.id === a.id) ? list : [{ ...a, at: Date.now() }, ...list].slice(0, 20)));
-    if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
-      new Notification("Device Monitor", { body: a.text });
-    }
-  }, []);
-
-  // Detect changes between polls and raise alerts (low battery, offline, back online, charged, high CPU).
-  const detect = useCallback(
-    (list: DeviceView[]) => {
-      if (!firstLoad.current) {
-        for (const d of list) {
-          const old = prev.current.get(d.id);
-          if (!old) continue;
-          const stamp = Math.floor(Date.now() / 600_000);
-          if (old.online && !d.online) pushAlert({ id: `off-${d.id}-${stamp}`, deviceId: d.id, level: "warn", text: `${d.name} went offline` });
-          if (!old.online && d.online) pushAlert({ id: `on-${d.id}-${stamp}`, deviceId: d.id, level: "info", text: `${d.name} is back online` });
-          if (d.battery && !d.battery.charging && d.battery.level <= LOW_BATTERY && (!old.battery || old.battery.level > LOW_BATTERY || old.battery.charging))
-            pushAlert({ id: `low-${d.id}-${stamp}`, deviceId: d.id, level: "crit", text: `${d.name} battery low (${d.battery.level}%)` });
-          if (d.battery && old.battery && old.battery.level < 100 && d.battery.level === 100 && d.battery.charging)
-            pushAlert({ id: `full-${d.id}-${stamp}`, deviceId: d.id, level: "info", text: `${d.name} is fully charged` });
-          if ((d.system.cpuPercent ?? 0) >= HIGH_CPU && (old.system.cpuPercent ?? 0) < HIGH_CPU)
-            pushAlert({ id: `cpu-${d.id}-${stamp}`, deviceId: d.id, level: "warn", text: `${d.name} CPU at ${Math.round(d.system.cpuPercent ?? 0)}%` });
+  // Alerts are raised by the server (low battery, offline, back online, charged, high CPU).
+  const pollAlerts = useCallback(async () => {
+    try {
+      const url = bootstrapped.current ? `/api/alerts?since=${lastAlertId.current}` : "/api/alerts";
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { alerts: Alert[]; latestId: number };
+      if (!bootstrapped.current) {
+        bootstrapped.current = true;
+        setAlerts(data.alerts);
+      } else if (data.alerts.length > 0) {
+        setAlerts((list) => [...[...data.alerts].reverse(), ...list].slice(0, 20));
+        if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
+          for (const a of data.alerts) new Notification("Device Monitor", { body: a.text });
         }
       }
-      firstLoad.current = false;
-      prev.current = new Map(list.map((d) => [d.id, d]));
-    },
-    [pushAlert],
-  );
+      lastAlertId.current = data.latestId;
+    } catch {
+      /* ignore transient errors */
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -381,22 +403,25 @@ export default function DeviceDashboard() {
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const data = (await res.json()) as { devices: DeviceView[] };
       setDevices(data.devices);
-      detect(data.devices);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load devices");
     } finally {
       setLoaded(true);
     }
-  }, [detect]);
+  }, []);
 
   useEffect(() => {
     setServerUrl(window.location.origin);
     setNotify(typeof Notification !== "undefined" && Notification.permission === "granted");
     load();
-    const id = setInterval(load, 5000);
+    pollAlerts();
+    const id = setInterval(() => {
+      load();
+      pollAlerts();
+    }, 5000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, pollAlerts]);
 
   async function createPairingCode() {
     setPairingBusy(true);
@@ -482,6 +507,15 @@ export default function DeviceDashboard() {
             </button>
           ) : null}
           <button
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.href = "/login";
+            }}
+            className="rounded-full border border-white/15 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/10"
+          >
+            Sign out
+          </button>
+          <button
             onClick={createPairingCode}
             disabled={pairingBusy}
             className="rounded-full bg-gradient-to-r from-sky-400 to-violet-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20 hover:brightness-110 disabled:opacity-60"
@@ -514,7 +548,7 @@ export default function DeviceDashboard() {
                 <span className={a.level === "crit" ? "text-red-300" : a.level === "warn" ? "text-amber-300" : "text-sky-300"}>
                   {a.level === "crit" ? "🔴" : a.level === "warn" ? "🟠" : "🔵"} {a.text}
                 </span>
-                <span className="shrink-0 text-xs text-slate-500">{new Date(a.at).toLocaleTimeString()}</span>
+                <span className="shrink-0 text-xs text-slate-500">{new Date(a.at).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</span>
               </li>
             ))}
           </ul>
