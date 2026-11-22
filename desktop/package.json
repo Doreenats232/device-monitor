@@ -1,0 +1,22 @@
+{
+  "name": "device-monitor-desktop",
+  "version": "1.0.0",
+  "description": "Device Monitor desktop app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.devicemonitor.desktop",
+    "productName": "DeviceMonitor",
+    "files": ["main.js", "setup.html", "preload.js"],
+    "win": { "target": "portable" },
+    "portable": { "artifactName": "DeviceMonitor.exe" },
+    "directories": { "output": "dist" }
+  }
+}

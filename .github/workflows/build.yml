@@ -1,0 +1,49 @@
+name: Build APK and EXE
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.9" }
+      - name: Build debug APK
+        working-directory: agents/android
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeviceMonitor-apk
+          path: agents/android/app/build/outputs/apk/debug/app-debug.apk
+
+  pc-agent-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Build agent exe
+        working-directory: agents/pc
+        run: npx -y @yao-pkg/pkg agent.js --targets node20-win-x64 --output dist/DeviceMonitorAgent.exe
+      - uses: actions/upload-artifact@v4
+        with: { name: DeviceMonitorAgent-exe, path: agents/pc/dist/DeviceMonitorAgent.exe }
+
+  desktop-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Build desktop app
+        working-directory: desktop
+        run: |
+          npm install
+          npm run dist
+      - uses: actions/upload-artifact@v4
+        with: { name: DeviceMonitor-desktop-exe, path: desktop/dist/DeviceMonitor.exe }
