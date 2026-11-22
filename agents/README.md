@@ -81,7 +81,6 @@ Notes on Android:
 Push this project to GitHub and run **Actions → Build APK and EXE**. It produces:
 
 - `DeviceMonitor-apk` → `app-debug.apk` (phone agent + in-app dashboard viewer)
-- `DeviceMonitorAgent-exe` → PC agent exe
-- `DeviceMonitor-desktop-exe` → `DeviceMonitor.exe`, a desktop window for the dashboard (tray icon, remembers your dashboard URL)
+- `DeviceMonitor-desktop-exe` → `DeviceMonitor.exe`, ONE app for PC: choose **Monitor**, **Be monitored**, or **Both** (tray icon, remembers settings)
 
 Deploy the Next.js dashboard publicly (e.g. Render + Postgres, `DATABASE_URL` env var, `npm run build && npm start`) so phones and PCs can reach it.

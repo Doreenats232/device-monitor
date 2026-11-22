@@ -14,7 +14,7 @@
   "build": {
     "appId": "com.devicemonitor.desktop",
     "productName": "DeviceMonitor",
-    "files": ["main.js", "setup.html", "preload.js"],
+    "files": ["main.js", "agent-core.js", "setup.html", "status.html", "preload.js"],
     "win": { "target": "portable" },
     "portable": { "artifactName": "DeviceMonitor.exe" },
     "directories": { "output": "dist" }

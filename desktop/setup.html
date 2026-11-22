@@ -1,20 +1,47 @@
 <!doctype html><meta charset="utf-8"><title>Device Monitor</title>
 <style>
-  body{margin:0;height:100vh;display:grid;place-items:center;font-family:Segoe UI,system-ui,sans-serif;color:#e2e8f0;
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Segoe UI,system-ui,sans-serif;color:#e2e8f0;
   background:radial-gradient(800px 400px at 10% 0,rgba(56,189,248,.18),transparent),radial-gradient(700px 400px at 100% 0,rgba(167,139,250,.18),transparent),#070b14}
-  .c{width:420px;padding:32px;border-radius:24px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
-  h1{margin:0 0 4px;font-size:24px} p{color:#94a3b8;font-size:14px;margin:0 0 18px}
-  input{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:#0b1220;color:#fff;font-size:15px}
-  button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:14px;font-weight:700;font-size:15px;color:#06101f;cursor:pointer;background:linear-gradient(90deg,#38bdf8,#a78bfa)}
-  #e{color:#fca5a5;font-size:13px;margin-top:10px;min-height:16px}
+  .c{width:520px;max-width:94vw;padding:30px;border-radius:24px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+  h1{margin:0 0 4px;font-size:24px} p{color:#94a3b8;font-size:14px;margin:0 0 16px}
+  .modes{display:grid;gap:10px;margin-bottom:16px}
+  .m{padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:#0b1220;cursor:pointer}
+  .m.on{border-color:#38bdf8;background:rgba(56,189,248,.1)}
+  .m b{display:block;font-size:15px}.m span{font-size:12.5px;color:#94a3b8}
+  label{font-size:12px;color:#94a3b8;display:block;margin:12px 0 4px}
+  input{width:100%;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:#0b1220;color:#fff;font-size:15px}
+  button{margin-top:18px;width:100%;padding:12px;border:0;border-radius:14px;font-weight:700;font-size:15px;color:#06101f;cursor:pointer;background:linear-gradient(90deg,#38bdf8,#a78bfa)}
+  #e{color:#fca5a5;font-size:13px;margin-top:10px;min-height:16px}.hide{display:none}
+  .note{font-size:12px;color:#64748b;margin-top:10px}
 </style>
-<div class="c"><h1>Device Monitor</h1><p>Enter your dashboard address to connect.</p>
-<input id="u" placeholder="https://your-dashboard.onrender.com" autofocus>
-<button id="b">Connect</button><div id="e"></div></div>
+<div class="c"><h1>Device Monitor</h1><p>What should this PC do?</p>
+<div class="modes">
+ <div class="m" data-m="monitor"><b>👁️ Monitor other devices</b><span>Open the dashboard to see your phones and PCs.</span></div>
+ <div class="m" data-m="monitored"><b>📡 Be monitored</b><span>Share this PC's battery, network and stats with a dashboard.</span></div>
+ <div class="m" data-m="both"><b>🔁 Both</b><span>See the dashboard and share this PC too.</span></div>
+</div>
+<label>Dashboard address</label><input id="u" placeholder="https://your-dashboard.onrender.com">
+<div id="pw" class="hide">
+ <label>6-digit pairing code (from the dashboard: “Pair a device”)</label><input id="code" inputmode="numeric" maxlength="6">
+ <label>Name for this PC</label><input id="name">
+ <div class="note">Sharing shows a visible indicator and can be stopped or unpaired any time. Only battery, network and system stats are sent.</div>
+</div>
+<button id="b">Continue</button><div id="e"></div></div>
 <script>
- const go=async()=>{const v=document.getElementById('u').value.trim();
-  if(!/^https?:\/\//.test(v)){document.getElementById('e').textContent='Must start with http:// or https://';return}
-  await dm.saveServer(v)};
- document.getElementById('b').onclick=go;
- document.getElementById('u').onkeydown=e=>{if(e.key==='Enter')go()};
+ let mode='monitor';
+ const $=id=>document.getElementById(id);
+ const sel=m=>{mode=m;document.querySelectorAll('.m').forEach(x=>x.classList.toggle('on',x.dataset.m===m));$('pw').classList.toggle('hide',m==='monitor')};
+ document.querySelectorAll('.m').forEach(x=>x.onclick=()=>sel(x.dataset.m));
+ dm.getState().then(s=>{ if(s.server)$('u').value=s.server; $('name').value=s.name||s.hostname; sel(s.mode||'monitor'); });
+ $('b').onclick=async()=>{
+  $('e').textContent='';
+  const server=$('u').value.trim().replace(/\/+$/,'');
+  if(!/^https?:\/\//.test(server)){$('e').textContent='Address must start with http:// or https://';return}
+  const code=$('code').value.trim();
+  if(mode!=='monitor' && !/^\d{6}$/.test(code)){$('e').textContent='Enter the 6-digit pairing code';return}
+  $('b').textContent='Working…';
+  const r=await dm.saveSetup({mode,server,code,name:$('name').value.trim()});
+  if(r&&r.error){$('e').textContent=r.error;$('b').textContent='Continue'}
+ };
 </script>
